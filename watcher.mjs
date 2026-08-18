@@ -3,12 +3,23 @@
 // push to phone via ntfy when Claude says the watched event happened.
 // Zero dependencies (Node 22+: built-in fetch + WebSocket).
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
-// ---- config (env overrides) ----
+// ---- config: .env file (next to this script), real env vars win ----
+try {
+  for (const line of readFileSync(new URL(".env", import.meta.url), "utf8").split("\n")) {
+    const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/);
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
+  }
+} catch {}
 const TARGET_URL_PATTERN = process.env.TARGET_URL_PATTERN ?? "mail.google.com";
 const EVENT_DESCRIPTION =
   process.env.EVENT_DESCRIPTION ?? "a new incoming email arrived in the inbox";
-const NTFY_TOPIC = process.env.NTFY_TOPIC ?? "jules-sentinel-f7f20e0b";
+const NTFY_TOPIC = process.env.NTFY_TOPIC;
+if (!NTFY_TOPIC) {
+  console.error("NTFY_TOPIC is not set. Copy .env.example to .env and pick your own topic (see README).");
+  process.exit(1);
+}
 const POLL_MS = Number(process.env.POLL_MS ?? 20_000);
 const CDP_PORT = Number(process.env.CDP_PORT ?? 9222);
 const MAX_DIFF_CHARS = 8_000;
