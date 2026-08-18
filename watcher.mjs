@@ -3,7 +3,7 @@
 // push to phone via ntfy when Claude says the watched event happened.
 // Zero dependencies (Node 22+: built-in fetch + WebSocket).
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 
 // ---- config: .env file (next to this script), real env vars win ----
 try {
@@ -15,6 +15,11 @@ try {
 const TARGET_URL_PATTERN = process.env.TARGET_URL_PATTERN ?? "mail.google.com";
 const EVENT_DESCRIPTION =
   process.env.EVENT_DESCRIPTION ?? "a new incoming email arrived in the inbox";
+const RULES_FILE = process.env.WATCH_RULES_FILE ?? new URL("WATCH_RULES.md", import.meta.url).pathname;
+const DRY_RUN = !!process.env.DRY_RUN;
+const EVENTS_LOG = new URL("events.jsonl", import.meta.url).pathname;
+let RULES;
+try { RULES = readFileSync(RULES_FILE, "utf8").trim(); } catch { RULES = EVENT_DESCRIPTION; }
 const NTFY_TOPIC = process.env.NTFY_TOPIC;
 if (!NTFY_TOPIC) {
   console.error("NTFY_TOPIC is not set. Copy .env.example to .env and pick your own topic (see README).");
@@ -63,8 +68,11 @@ function diffLines(oldText, newText) {
 }
 
 function classify(added, removed) {
-  const prompt = `You are a screen-change classifier watching a web page for one event type.
-Watched event: ${EVENT_DESCRIPTION}
+  const prompt = `You are a screen-change classifier watching a web page. Ping-worthy events are defined by these rules:
+
+<rules>
+${RULES}
+</rules>
 
 Lines that just APPEARED on the page:
 ${added.join("\n").slice(0, MAX_DIFF_CHARS) || "(none)"}
@@ -72,7 +80,7 @@ ${added.join("\n").slice(0, MAX_DIFF_CHARS) || "(none)"}
 Lines that just DISAPPEARED:
 ${removed.join("\n").slice(0, MAX_DIFF_CHARS) || "(none)"}
 
-Did the watched event just happen? Reply with exactly "NO", or "YES: <one-line summary under 150 chars>". Nothing else.`;
+Did a ping-worthy event just happen per the rules? Reply with exactly "YES: <one-line summary under 150 chars>" or "NO: <one-line reason under 100 chars>". Nothing else.`;
   stats.claudeCalls++;
   return execFileSync("claude", ["-p", prompt, "--model", "haiku"], {
     encoding: "utf8",
@@ -104,15 +112,23 @@ async function poll() {
   log(`change detected (+${added.length}/-${removed.length} lines), asking Claude...`);
   const verdict = classify(added, removed);
   log(`claude: ${verdict}`);
-  if (verdict.startsWith("YES")) {
-    const summary = verdict.replace(/^YES:?\s*/, "") || EVENT_DESCRIPTION;
+  const isYes = verdict.startsWith("YES");
+  if (isYes && !DRY_RUN) {
+    const summary = verdict.replace(/^YES:?\s*/, "") || "watched event happened";
     await ping(summary);
     log(`pinged phone: ${summary}`);
+  } else if (isYes) {
+    log(`[dry-run] would have pinged`);
   }
+  appendFileSync(EVENTS_LOG, JSON.stringify({
+    ts: new Date().toISOString(), added, removed, verdict, pinged: isYes && !DRY_RUN,
+  }) + "\n");
 }
 
-log(`watching "${TARGET_URL_PATTERN}" for: ${EVENT_DESCRIPTION}`);
-log(`ntfy topic: ${NTFY_TOPIC} | poll every ${POLL_MS / 1000}s`);
+log(`watching "${TARGET_URL_PATTERN}"`);
+log(`rules: ${RULES === EVENT_DESCRIPTION ? `EVENT_DESCRIPTION ("${EVENT_DESCRIPTION}")` : RULES_FILE}`);
+log(`ntfy topic: ${NTFY_TOPIC} | poll every ${POLL_MS / 1000}s${DRY_RUN ? " | DRY RUN (no pings)" : ""}`);
+log(`event audit trail: ${EVENTS_LOG}`);
 while (true) {
   try {
     await poll();

@@ -34,6 +34,20 @@ Chrome tab --CDP--> watcher.mjs (poll ~20s, free)
 
    Verify with `curl http://localhost:9222/json/version` (expect JSON). First time only: log into the watched app (e.g. Gmail) in that window — the profile remembers it. Alias worth adding: `alias sentinel-chrome='open -na "Google Chrome" --args --user-data-dir="$HOME/.screen-sentinel-chrome" --remote-debugging-port=9222 --no-first-run'`
 
+## Watch rules
+
+For anything richer than a one-sentence `EVENT_DESCRIPTION`, copy `WATCH_RULES.example.md` to `WATCH_RULES.md` (git-ignored) and write the rulebook in plain English: ping-worthy actions, explicit exclusions, edge cases. When `WATCH_RULES.md` exists it replaces `EVENT_DESCRIPTION` entirely — Claude judges every screen change against the file.
+
+## Tuning / test mode
+
+Every detected change is appended to `events.jsonl` (git-ignored): timestamp, the exact appeared/disappeared lines Claude saw, its verdict (`YES: summary` or `NO: reason`), and whether a ping fired. This is the audit trail for tuning rules — watch it live with:
+
+```sh
+tail -f events.jsonl | jq .
+```
+
+To tune without spamming your phone, run with `DRY_RUN=1 node watcher.mjs`: everything works and logs normally, but no pings are sent. Typical loop: dry-run against the real app, do a few actions of each kind, read the verdicts in `events.jsonl`, edit `WATCH_RULES.md`, repeat.
+
 ## Run
 
 Open the watched app in a tab of the sentinel Chrome, then:

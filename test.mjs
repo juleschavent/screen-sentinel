@@ -36,7 +36,7 @@ await cdpEval(`document.body.innerText = "Inbox\\nMail from Alice: lunch plans"`
 
 // 2. watcher against the fake inbox
 const watcher = spawn("node", [new URL("watcher.mjs", import.meta.url).pathname], {
-  env: { ...process.env, CDP_PORT: String(PORT), TARGET_URL_PATTERN: "about:blank", POLL_MS: "2000" },
+  env: { ...process.env, CDP_PORT: String(PORT), TARGET_URL_PATTERN: "about:blank", POLL_MS: "2000", WATCH_RULES_FILE: "/dev/null/none" },
 });
 kids.push(watcher);
 let out = "";
