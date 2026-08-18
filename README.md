@@ -7,13 +7,15 @@ POC target: Gmail inbox, event = new incoming mail. Point it at anything by chan
 ## One-time setup
 
 1. **Phone**: install the ntfy app (iOS/Android), subscribe to topic `jules-sentinel-f7f20e0b`.
-2. **Chrome must expose CDP.** Quit Chrome fully, then relaunch with:
+2. **Launch the dedicated sentinel Chrome.** Chrome 136+ ignores `--remote-debugging-port` on your default profile (security), so the sentinel runs as a second Chrome instance with its own profile, alongside your normal Chrome:
 
    ```sh
-   open -a "Google Chrome" --args --remote-debugging-port=9222
+   open -na "Google Chrome" --args --user-data-dir="$HOME/.screen-sentinel-chrome" --remote-debugging-port=9222 --no-first-run
    ```
 
-   (Add as an alias if this becomes a daily thing: `alias chrome-cdp='open -a "Google Chrome" --args --remote-debugging-port=9222'`)
+   Verify with `curl http://localhost:9222/json/version` (expect JSON). First time only: log into the watched app (e.g. Gmail) in that window — the profile remembers it.
+
+   Alias worth adding: `alias sentinel-chrome='open -na "Google Chrome" --args --user-data-dir="$HOME/.screen-sentinel-chrome" --remote-debugging-port=9222 --no-first-run'`
 
 ## Run
 
