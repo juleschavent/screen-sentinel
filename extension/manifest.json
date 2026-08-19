@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Screen Sentinel",
+  "version": "1.0",
+  "description": "Watches pages matching the configured pattern and reports screen changes to the local sentinel server (localhost only).",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

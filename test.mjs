@@ -56,5 +56,24 @@ await waitFor("baseline captured", 15_000);
 // 3. a new mail arrives
 await cdpEval(`document.body.innerText += "\\nNew mail from Bob: Test subject"`);
 await waitFor("pinged phone", 180_000);
+console.log("PASS stage 1 (CDP mode): change -> Claude YES -> ntfy ping");
 
-die("PASS: change -> Claude YES -> ntfy ping", 0);
+// 4. extension mode: same chain through server.mjs, as the content script would call it
+const SRV_PORT = 8791;
+const server = spawn("node", [new URL("server.mjs", import.meta.url).pathname], {
+  env: { ...process.env, SENTINEL_PORT: String(SRV_PORT), WATCH_RULES_FILE: "/dev/null/none" },
+  stdio: "inherit",
+});
+kids.push(server);
+for (let i = 0; ; i++) {
+  try { await fetch(`http://localhost:${SRV_PORT}/config`); break; }
+  catch { if (i > 20) die("FAIL: server never came up", 1); await new Promise((r) => setTimeout(r, 500)); }
+}
+const reply = await (await fetch(`http://localhost:${SRV_PORT}/event`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ url: "test://fake-inbox", added: ["New mail from Carol: Extension path works"], removed: [] }),
+})).json();
+if (!reply.verdict?.startsWith("YES") || !reply.pinged) die(`FAIL: server verdict ${JSON.stringify(reply)}`, 1);
+
+die("PASS: both modes: change -> Claude YES -> ntfy ping", 0);

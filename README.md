@@ -1,20 +1,20 @@
 # Screen Sentinel
 
-Watches a browser tab for a specific type of event and pushes a notification to your phone. Works on apps with **no API**: a free DOM-text diff detects "something changed", Claude (Haiku) wakes only on change to judge "is this the event?", and a `ntfy.sh` push fires on YES.
+Watches a browser tab for a specific type of event and pushes a notification to your phone. Works on apps with **no API**: a free in-browser text diff detects "something changed", Claude (Haiku) wakes only on change to judge "is this the event?", and a `ntfy.sh` push fires on YES.
 
 ```
-Chrome tab --CDP--> watcher.mjs (poll ~20s, free)
-                        | text changed?
-                        v
-              claude -p (haiku): "is this <event>? YES/NO"
-                        | YES
-                        v
-              ntfy.sh/<your-topic> --> phone
+Chrome tab: extension/content.js polls visible text every 20s, line-diffs (free)
+        | changed?
+        v
+server.mjs (localhost) --> claude -p (haiku): "ping-worthy per the rules? YES/NO"
+        | YES
+        v
+ntfy.sh/<your-topic> --> phone
 ```
 
 ## Prerequisites (fresh machine)
 
-- macOS with Google Chrome
+- macOS with Google Chrome (any Chromium browser works for extension mode)
 - Node.js 22+ (`node --version`)
 - [Claude Code](https://claude.com/claude-code) installed and logged in (`claude -p "say hi"` must work) — every event classification is one cheap Haiku call
 - ntfy app on your phone (iOS/Android, free, no account)
@@ -24,39 +24,30 @@ Chrome tab --CDP--> watcher.mjs (poll ~20s, free)
 1. Clone this repo.
 2. `cp .env.example .env` and fill it in:
    - `NTFY_TOPIC`: pick an unguessable name (`sentinel-$(openssl rand -hex 4)`), subscribe to the same topic in the ntfy phone app. The name is the only access control — treat it like a password.
-   - `TARGET_URL_PATTERN`: substring of the URL of the tab to watch.
-   - `EVENT_DESCRIPTION`: plain English; Claude judges each screen change against it.
-3. **Launch the sentinel Chrome.** Chrome 136+ ignores `--remote-debugging-port` on your default profile (security), so the sentinel runs as a second Chrome instance with its own profile, alongside your normal Chrome:
-
-   ```sh
-   open -na "Google Chrome" --args --user-data-dir="$HOME/.screen-sentinel-chrome" --remote-debugging-port=9222 --no-first-run
-   ```
-
-   Verify with `curl http://localhost:9222/json/version` (expect JSON). First time only: log into the watched app (e.g. Gmail) in that window — the profile remembers it. Alias worth adding: `alias sentinel-chrome='open -na "Google Chrome" --args --user-data-dir="$HOME/.screen-sentinel-chrome" --remote-debugging-port=9222 --no-first-run'`
+   - `TARGET_URL_PATTERN`: substring of the URL of the tab to watch (copy from the address bar of the logged-in app, e.g. `kustomerapp.com`, not the marketing site).
+3. Load the extension in your normal Chrome: `chrome://extensions` → enable **Developer mode** (top right) → **Load unpacked** → select this repo's `extension/` folder.
 
 ## Watch rules
 
-For anything richer than a one-sentence `EVENT_DESCRIPTION`, copy `WATCH_RULES.example.md` to `WATCH_RULES.md` (git-ignored) and write the rulebook in plain English: ping-worthy actions, explicit exclusions, edge cases. When `WATCH_RULES.md` exists it replaces `EVENT_DESCRIPTION` entirely — Claude judges every screen change against the file.
+For anything richer than a one-sentence `EVENT_DESCRIPTION` (in `.env`), copy `WATCH_RULES.example.md` to `WATCH_RULES.md` (git-ignored) and write the rulebook in plain English: ping-worthy actions, explicit exclusions, edge cases. When `WATCH_RULES.md` exists it replaces `EVENT_DESCRIPTION` entirely — Claude judges every screen change against the file.
+
+## Run
+
+```sh
+node server.mjs
+```
+
+Leave it running, and have the watched app open in a tab. The extension attaches to any tab whose URL matches `TARGET_URL_PATTERN` (badge of proof: `[screen-sentinel] watching this tab` in that tab's DevTools console) and reports changes; the server logs every change, Claude's verdict, and running counters. If the tab was opened before the server started, it attaches by itself within ~15s.
 
 ## Tuning / test mode
 
-Every detected change is appended to `events.jsonl` (git-ignored): timestamp, the exact appeared/disappeared lines Claude saw, its verdict (`YES: summary` or `NO: reason`), and whether a ping fired. This is the audit trail for tuning rules — watch it live with:
+Every detected change is appended to `events.jsonl` (git-ignored): timestamp, the exact appeared/disappeared lines Claude saw, its verdict (`YES: summary` or `NO: reason`), and whether a ping fired. Watch it live with:
 
 ```sh
 tail -f events.jsonl | jq .
 ```
 
-To tune without spamming your phone, run with `DRY_RUN=1 node watcher.mjs`: everything works and logs normally, but no pings are sent. Typical loop: dry-run against the real app, do a few actions of each kind, read the verdicts in `events.jsonl`, edit `WATCH_RULES.md`, repeat.
-
-## Run
-
-Open the watched app in a tab of the sentinel Chrome, then:
-
-```sh
-node watcher.mjs
-```
-
-Leave it running in a terminal. It logs every poll cycle plus running counters (polls / changes / claude calls / pings), so you can confirm Claude only runs when the screen changed.
+To tune without spamming your phone, run `DRY_RUN=1 node server.mjs`: everything works and logs normally, but no pings are sent. Typical loop: dry-run against the real app, do a few actions of each kind, read the verdicts in `events.jsonl`, edit `WATCH_RULES.md`, repeat.
 
 ## Test
 
@@ -64,10 +55,22 @@ Leave it running in a terminal. It logs every poll cycle plus running counters (
 node test.mjs
 ```
 
-Spins up a throwaway headless Chrome with a fake inbox, appends a fake mail, and asserts the full chain (diff -> Claude YES -> ntfy ping). Costs one Haiku call and sends one real ping to your topic.
+Asserts the full chain twice (one Haiku call each, one real ping to your topic per stage): once through CDP mode against a throwaway headless Chrome with a fake inbox, once through the server endpoint exactly as the extension calls it.
+
+## Alternative: CDP mode (no extension)
+
+`node watcher.mjs` polls the tab from outside the browser via the DevTools protocol instead. Needs a dedicated Chrome instance with a debugging port, which endpoint-security tools often flag — prefer extension mode on any managed machine:
+
+```sh
+open -na "Google Chrome" --args --user-data-dir="$HOME/.screen-sentinel-chrome" --remote-debugging-port=9222 --no-first-run
+```
+
+## A word on corporate laptops
+
+This tool reads the watched page's content and sends changed text to Anthropic (classification) and event summaries to ntfy.sh (push). On a work machine, or pointed at an app with customer data, clear it with IT first — the design is easy to explain (localhost server, two known endpoints, full audit trail in `events.jsonl`), but it's their call.
 
 ## Not built yet (add before real 9-to-5 use)
 
-- Dead-man's switch: curl a healthchecks.io heartbeat each poll so you get alerted when the watcher itself dies (laptop asleep, Chrome closed, crash).
-- launchd keep-alive so watcher + sentinel Chrome survive crashes/reboots.
+- Dead-man's switch: heartbeat to healthchecks.io so you get alerted when the watcher itself dies (laptop asleep, Chrome closed, crash).
+- launchd keep-alive so the server survives crashes/reboots.
 - Noise filter: if the watched page has constantly-changing text (clocks, counters), an ignore-regex so Claude isn't called every poll.
