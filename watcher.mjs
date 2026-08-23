@@ -2,7 +2,7 @@
 // CDP mode: poll a Chrome tab's text over the DevTools protocol, wake Claude on change.
 // Needs Chrome launched with --remote-debugging-port (loud on managed machines);
 // prefer extension mode (server.mjs + extension/) for daily use. Used by test.mjs.
-import { cfg, diffLines, handleChange, log, logStartup, stats } from "./lib.mjs";
+import { cfg, diffLines, handleChange, heartbeat, log, logStartup, stats } from "./lib.mjs";
 
 let lastText = null;
 
@@ -34,6 +34,7 @@ async function readTabText() {
 
 async function poll() {
   stats.polls++;
+  heartbeat();
   const text = await readTabText();
   if (lastText === null) {
     lastText = text;

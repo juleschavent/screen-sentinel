@@ -69,8 +69,12 @@ open -na "Google Chrome" --args --user-data-dir="$HOME/.screen-sentinel-chrome" 
 
 This tool reads the watched page's content and sends changed text to Anthropic (classification) and event summaries to ntfy.sh (push). On a work machine, or pointed at an app with customer data, clear it with IT first — the design is easy to explain (localhost server, two known endpoints, full audit trail in `events.jsonl`), but it's their call.
 
-## Not built yet (add before real 9-to-5 use)
+## Hardening for real 9-to-5 use
 
-- Dead-man's switch: heartbeat to healthchecks.io so you get alerted when the watcher itself dies (laptop asleep, Chrome closed, crash).
-- launchd keep-alive so the server survives crashes/reboots.
-- Noise filter: if the watched page has constantly-changing text (clocks, counters), an ignore-regex so Claude isn't called every poll.
+All three are built in and off by default:
+
+**Dead-man's switch.** The failure mode that matters is the watcher dying *silently* (laptop asleep, Chrome closed, server crashed) — no pings looks identical to no events. Fix: create a free check at [healthchecks.io](https://healthchecks.io) with a grace period of ~5 minutes, add its ping URL to `.env` as `HEARTBEAT_URL`, and in the check's settings add an **ntfy** integration pointing at your same topic. The extension heartbeats through the server every poll; the moment the chain goes quiet, your phone gets a "check is down" alert.
+
+**Keep-alive.** `./launchd-install.sh` installs a launchd agent that starts `server.mjs` at login and restarts it if it crashes. Output goes to `server.log` (git-ignored). The script prints the uninstall command.
+
+**Noise filter.** If the watched page has constantly-changing text (relative timestamps, counters, ads), set `IGNORE_REGEX` in `.env`. Changed lines matching it are dropped before Claude is called; if nothing is left, no call at all. Find candidates by watching `events.jsonl` in dry-run mode for `NO` verdicts that keep recurring.

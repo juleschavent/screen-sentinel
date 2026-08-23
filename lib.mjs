@@ -23,6 +23,8 @@ export const cfg = {
   POLL_MS: Number(process.env.POLL_MS ?? 20_000),
   CDP_PORT: Number(process.env.CDP_PORT ?? 9222),
   DRY_RUN: !!process.env.DRY_RUN,
+  IGNORE_REGEX: process.env.IGNORE_REGEX ? new RegExp(process.env.IGNORE_REGEX) : null,
+  HEARTBEAT_URL: process.env.HEARTBEAT_URL,
   RULES,
   RULES_SOURCE: RULES === EVENT_DESCRIPTION ? `EVENT_DESCRIPTION ("${EVENT_DESCRIPTION}")` : RULES_FILE,
 };
@@ -80,8 +82,22 @@ async function ping(summary) {
   stats.pings++;
 }
 
+// Dead-man's switch: hit the healthchecks.io check URL each poll. If the whole
+// chain (Chrome tab -> extension -> server) goes quiet, healthchecks alerts the phone.
+export function heartbeat() {
+  if (cfg.HEARTBEAT_URL) fetch(cfg.HEARTBEAT_URL).catch(() => {});
+}
+
 // A screen change happened: classify it, ping on YES, append to the audit trail.
 export async function handleChange(added, removed) {
+  if (cfg.IGNORE_REGEX) {
+    added = added.filter((l) => !cfg.IGNORE_REGEX.test(l));
+    removed = removed.filter((l) => !cfg.IGNORE_REGEX.test(l));
+    if (!added.length && !removed.length) {
+      log("change ignored (all lines matched IGNORE_REGEX), no Claude call");
+      return { verdict: "SKIP: all changed lines matched IGNORE_REGEX", pinged: false };
+    }
+  }
   stats.changes++;
   const verdict = classify(added, removed);
   log(`claude: ${verdict}`);

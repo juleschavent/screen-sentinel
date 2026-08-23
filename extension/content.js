@@ -17,6 +17,7 @@
 
   let last = null;
   setInterval(async () => {
+    fetch(`${SERVER}/heartbeat`).catch(() => {});
     const text = document.body.innerText;
     if (last === null) { last = text; console.log("[screen-sentinel] baseline captured"); return; }
     const oldSet = new Set(last.split("\n"));

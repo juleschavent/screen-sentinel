@@ -1,3 +1,4 @@
 .env
 WATCH_RULES.md
 events.jsonl
+server.log

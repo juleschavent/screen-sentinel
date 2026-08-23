@@ -3,7 +3,7 @@
 // The extension does the free in-browser diffing; this server does the paid part
 // (Claude classification + ntfy ping). Binds to localhost only.
 import { createServer } from "node:http";
-import { cfg, handleChange, log, logStartup, stats } from "./lib.mjs";
+import { cfg, handleChange, heartbeat, log, logStartup, stats } from "./lib.mjs";
 
 const PORT = Number(process.env.SENTINEL_PORT ?? 8790);
 
@@ -12,6 +12,10 @@ createServer(async (req, res) => {
   res.setHeader("Access-Control-Allow-Headers", "content-type");
   try {
     if (req.method === "OPTIONS") return res.end();
+    if (req.method === "GET" && req.url === "/heartbeat") {
+      heartbeat();
+      return res.end("ok");
+    }
     if (req.method === "GET" && req.url === "/config") {
       res.setHeader("content-type", "application/json");
       return res.end(JSON.stringify({ pattern: cfg.TARGET_URL_PATTERN, pollMs: cfg.POLL_MS }));
