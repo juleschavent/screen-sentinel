@@ -7,7 +7,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 try {
   for (const line of readFileSync(new URL(".env", import.meta.url), "utf8").split("\n")) {
     const m = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/);
-    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2];
+    if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^(["'])(.*)\1$/, "$2");
   }
 } catch {}
 
@@ -74,11 +74,12 @@ Did a ping-worthy event just happen per the rules? Reply with exactly "YES: <one
 }
 
 async function ping(summary) {
-  await fetch(`https://ntfy.sh/${cfg.NTFY_TOPIC}`, {
+  const res = await fetch(`https://ntfy.sh/${encodeURIComponent(cfg.NTFY_TOPIC)}`, {
     method: "POST",
     headers: { Title: "Screen Sentinel", Priority: "high", Tags: "bell" },
     body: summary,
   });
+  if (!res.ok) throw new Error(`ntfy rejected the ping: HTTP ${res.status} ${await res.text()}`);
   stats.pings++;
 }
 
@@ -102,14 +103,19 @@ export async function handleChange(added, removed) {
   const verdict = classify(added, removed);
   log(`claude: ${verdict}`);
   const isYes = verdict.startsWith("YES");
+  let pinged = false;
   if (isYes && !cfg.DRY_RUN) {
     const summary = verdict.replace(/^YES:?\s*/, "") || "watched event happened";
-    await ping(summary);
-    log(`pinged phone: ${summary}`);
+    try {
+      await ping(summary);
+      pinged = true;
+      log(`pinged phone: ${summary}`);
+    } catch (err) {
+      log(`PING FAILED: ${err.message}`);
+    }
   } else if (isYes) {
     log(`[dry-run] would have pinged`);
   }
-  const pinged = isYes && !cfg.DRY_RUN;
   appendFileSync(EVENTS_LOG, JSON.stringify({
     ts: new Date().toISOString(), added, removed, verdict, pinged,
   }) + "\n");
